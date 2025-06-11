@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Estaciones Meteorológicas – Edomex</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+  <style>
+    html, body, #map {
+      height: 100%;
+      margin: 0;
+    }
+    .legend {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      background-color: white;
+      border: 1px solid #ccc;
+      padding: 10px;
+      border-radius: 6px;
+      font-size: 13px;
+      box-shadow: 2px 2px 8px rgba(0, 0, 0, 0.3);
+      z-index: 1000;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <div class="legend">
+    <b>Simbología:</b><br>
+    <img src="https://cdn-icons-png.flaticon.com/512/1116/1116453.png" width="15"> Estaciones Meteorológicas<br>
+  </div>
+
+  <script>
+    const API_KEY = "f0c44ed4-4cde-401c-b25c-29b2aff61e00";
+    const map = L.map("map").setView([19.35, -99.5], 9);
+    const markerGroup = L.layerGroup().addTo(map);
+    let edoMexGeojson = null;
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "© OpenStreetMap"
+    }).addTo(map);
+
+    async function obtenerEstaciones() {
+      const url = "https://pro.weatherxm.com/api/stations/bounds?min_lat=18.65&min_lon=-100.50&max_lat=20.30&max_lon=-98.45";
+      const res = await fetch(url, { headers: { "X-API-KEY": API_KEY } });
+      const data = await res.json();
+      return data.stations || [];
+    }
+
+    async function obtenerDatos(id) {
+      const res = await fetch(`https://pro.weatherxm.com/api/stations/${id}/latest`, {
+        headers: { "X-API-KEY": API_KEY }
+      });
+      return await res.json();
+    }
+
+    const nombresPersonalizados = {
+    "32fd3740-438d-11ef-8e8d-b55568dc8e66": "Estación Metepec Centro (Secretaría del Campo del Estado de México)",
+    "2f92bc10-438d-11ef-8e8d-b55568dc8e66": "Estación Metepec Norte (UAEM Unidad de San Cayetano)",
+    "22e530b0-438d-11ef-8e8d-b55568dc8e66": "Estación Valle de Bravo Centro",
+    "2b20e300-438d-11ef-8e8d-b55568dc8e66": "Estación Tejupilco Centro (Delegación Regional de la Secretaría del Campo)",
+    "2c6f34f0-438d-11ef-8e8d-b55568dc8e66": "Estación Tejupilco Sur (Telebachillerato Comunitario Núm.46 la Goleta)",
+    "2d107e00-438d-11ef-8e8d-b55568dc8e66": "Cuautitlán Izcalli Centro (Secretaria de Desarrollo Agropecuario del Estado de México)",
+    "2568a740-438d-11ef-8e8d-b55568dc8e66": "Cuautitlán Izcalli Oeste (Primaria Sor Juana Ines de la Cruz)",
+    "34e07631-438d-11ef-8e8d-b55568dc8e66": "Estación Zumpango Centro (Secretaria De Desarrollo Agropecuario)",
+    "217a07f0-438d-11ef-8e8d-b55568dc8e66": "Estación Teotihuacán Centro (Delegación Regional de Desarrollo Agropecuario)",
+    "2f82dd90-438d-11ef-8e8d-b55568dc8e66": "Estación Amecameca Norte",
+    // Agrega todos los ID con su nombre correspondiente
+    };
+
+    async function actualizarMapa() {
+      markerGroup.clearLayers();
+      const estaciones = await obtenerEstaciones();
+
+      for (const est of estaciones) {
+        const { lat, lon } = est.location;
+        if (edoMexGeojson) {
+          const punto = turf.point([lon, lat]);
+          const dentro = turf.booleanPointInPolygon(punto, edoMexGeojson.features[0].geometry);
+          if (!dentro) continue;
+        }
+
+        const datos = await obtenerDatos(est.id);
+        const obs = datos?.observation || {};
+
+        const popup = `
+      <div style="font-size:13px; font-family:Arial, sans-serif; max-width:300px;">
+      <div style="font-size:15px; font-weight:bold; margin-bottom:6px;">
+        ${nombresPersonalizados[est.id] || est.name}
+      </div>
+      <table style="width:100%; border-collapse:separate; border-spacing: 0 8px;">
+        <tr><td style="font-weight:bold;">ID:</td><td>${est.id}</td></tr>
+        <tr><td style="font-weight:bold;">Temperatura:</td><td>${obs.temperature ?? "N/A"} °C</td></tr>
+        <tr><td style="font-weight:bold;">Sensación térmica:</td><td>${obs.feels_like ?? "N/A"} °C</td></tr>
+        <tr><td style="font-weight:bold;">Humedad:</td><td>${obs.humidity ?? "N/A"} %</td></tr>
+        <tr><td style="font-weight:bold;">Punto de rocío:</td><td>${obs.dew_point ?? "N/A"} °C</td></tr>
+        <tr><td style="font-weight:bold;">Presión:</td><td>${obs.pressure ?? "N/A"} hPa</td></tr>
+        <tr><td style="font-weight:bold;">Viento:</td><td>${obs.wind_speed ?? "N/A"} m/s</td></tr>
+        <tr><td style="font-weight:bold;">Ráfaga de viento:</td><td>${obs.wind_gust ?? "N/A"} m/s</td></tr>
+        <tr><td style="font-weight:bold;">Dirección del viento:</td><td>${obs.wind_direction ?? "N/A"}°</td></tr>
+        <tr><td style="font-weight:bold;">Índice UV:</td><td>${obs.uv_index ?? "N/A"}</td></tr>
+        <tr><td style="font-weight:bold;">Irradiancia solar:</td><td>${obs.solar_irradiance ?? "N/A"} W/m²</td></tr>
+        <tr><td style="font-weight:bold;">Precipitación:</td><td>${obs.precipitation_rate ?? "N/A"} mm/h</td></tr>
+        <tr><td style="font-weight:bold;">Actualización:</td><td>${obs.timestamp ?? "N/A"}</td></tr>
+      </table>
+    </div>
+  `;
+
+
+
+        L.marker([lat, lon], {
+          icon: L.icon({
+            iconUrl: "https://cdn-icons-png.flaticon.com/512/1116/1116453.png",
+            iconSize: [25, 25],
+            iconAnchor: [12, 25]
+          })
+        }).bindPopup(popup).addTo(markerGroup);
+      }
+
+      console.log("⏱️ Estaciones actualizadas");
+    }
+
+    // Cargar el contorno del Estado de México
+    fetch("lim_Est.geojson")
+      .then(r => r.json())
+      .then(data => {
+        edoMexGeojson = data;
+        L.geoJSON(data, {
+          style: { color: "#722f37", weight: 2, fillOpacity: 0 }
+        }).addTo(map);
+        actualizarMapa();
+        setInterval(actualizarMapa, 60000);
+      });
+
+const coloresDelegaciones = [
+  "#E69F00", // amarillo-anaranjado (cálido, contrastante)
+  "#56B4E9", // azul claro (fresco, contrastante)
+  "#009E73", // verde azulado fuerte
+  "#F0E442", // amarillo claro
+  "#0072B2", // azul oscuro fuerte
+  "#D55E00", // rojo-naranja opaco
+  "#CC79A7", // rosa magenta desaturado
+  "#999999", // gris medio
+  "#117733", // verde oliva oscuro
+  "#882255", // vino fuerte (contrastante)
+  "#44AA99"  // verde azulado pastel
+];
+
+
+
+const nombresDelegaciones = {
+  "I": "I Delegación Regional Atlacomulco",
+  "II": "II Delegación Regional Jilotepec",
+  "III": "III Delegación Regional Metepec",
+  "IV": "IV Delegación Regional Valle de Bravo",
+  "V": "V Delegación Regional Tejupilco",
+  "VI": "VI Delegación Regional Tenancingo",
+  "VII": "VII Delegación Regional Cuautitlán Izcalli",
+  "VIII": "VIII Delegación Regional Zumpango",
+  "IX": "IX Delegación Regional Teotihuacán",
+  "X": "X Delegación Regional Texcoco",
+  "XI": "XI Delegación Regional Amecameca"
+};
+
+fetch("Delegaciones Regionales agropecuarias.geojson")
+  .then(r => r.json())
+  .then(delegacionesGeoJSON => {
+    L.geoJSON(delegacionesGeoJSON, {
+      style: function(feature) {
+        const delegacionRaw = feature.properties["Delegació"] || "";
+        const match = delegacionRaw.match(/Regional (\w+)/); // ← ya no espera punto
+        const codigo = match ? match[1] : null;
+        const idx = Object.keys(nombresDelegaciones).indexOf(codigo);
+        const color = coloresDelegaciones[idx] || "#cccccc";
+        return {
+        color: color,        // ← el mismo color para el contorno
+        weight: 0.5,
+        fillOpacity: 0.4,
+        fillColor: color
+      };
+
+      },
+      onEachFeature: function(feature, layer) {
+        const delegacionRaw = feature.properties["Delegació"] || "";
+        const match = delegacionRaw.match(/Regional (\w+)/); // ← mismo ajuste
+        const codigo = match ? match[1] : null;
+        const nombre = nombresDelegaciones[codigo] || delegacionRaw;
+        layer.bindPopup(`<b>${nombre}</b>`);
+      }
+    }).addTo(map);
+  });
+
+  </script>
+</body>
+</html>
