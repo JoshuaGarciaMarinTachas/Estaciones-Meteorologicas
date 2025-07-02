@@ -52,11 +52,24 @@
     }
 
     async function obtenerDatos(id) {
-      const res = await fetch(`https://pro.weatherxm.com/api/stations/${id}/latest`, {
-        headers: { "X-API-KEY": API_KEY }
-      });
-      return await res.json();
+      try {
+        const res = await fetch(`https://pro.weatherxm.com/api/stations/${id}/latest`, {
+          headers: { "X-API-KEY": API_KEY }
+        });
+
+        if (!res.ok) {
+          console.warn(`⚠️ Error con estación ${id}: ${res.status}`);
+          return null;
+        }
+
+        const data = await res.json();
+        return data;
+      } catch (error) {
+        console.error(`❌ Error al obtener datos de ${id}:`, error);
+        return null;
+      }
     }
+
 
     const nombresPersonalizados = {
     "32fd3740-438d-11ef-8e8d-b55568dc8e66": "Estación Metepec Centro (Secretaría del Campo del Estado de México)",
@@ -86,6 +99,7 @@
 
         const datos = await obtenerDatos(est.id);
         const obs = datos?.observation || {};
+        if (!datos || !datos.observation) continue;
 
         const popup = `
       <div style="font-size:13px; font-family:Arial, sans-serif; max-width:300px;">
